@@ -96,22 +96,24 @@ func NewNativeConfig(user, clientVersion string, auth *Auth) (ssh.ClientConfig, 
 		authMethods []ssh.AuthMethod
 	)
 
-	for _, k := range auth.Keys {
-		key, err := ioutil.ReadFile(k)
-		if err != nil {
-			return ssh.ClientConfig{}, err
+	if auth != nil {
+		for _, k := range auth.Keys {
+			key, err := ioutil.ReadFile(k)
+			if err != nil {
+				return ssh.ClientConfig{}, err
+			}
+
+			privateKey, err := ssh.ParsePrivateKey(key)
+			if err != nil {
+				return ssh.ClientConfig{}, err
+			}
+
+			authMethods = append(authMethods, ssh.PublicKeys(privateKey))
 		}
 
-		privateKey, err := ssh.ParsePrivateKey(key)
-		if err != nil {
-			return ssh.ClientConfig{}, err
+		for _, p := range auth.Passwords {
+			authMethods = append(authMethods, ssh.Password(p))
 		}
-
-		authMethods = append(authMethods, ssh.PublicKeys(privateKey))
-	}
-
-	for _, p := range auth.Passwords {
-		authMethods = append(authMethods, ssh.Password(p))
 	}
 
 	return ssh.ClientConfig{
