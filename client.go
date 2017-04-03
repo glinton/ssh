@@ -70,12 +70,12 @@ type Auth struct {
 }
 
 // NewNativeClient creates a new Client using the golang ssh library
-func NewNativeClient(user, host, clientVersion string, port int, auth *Auth) (Client, error) {
+func NewNativeClient(user, host, clientVersion string, port int, auth *Auth, hostKeyCallback ssh.HostKeyCallback) (Client, error) {
 	if clientVersion == "" {
 		clientVersion = "SSH-2.0-Go"
 	}
 
-	config, err := NewNativeConfig(user, clientVersion, auth)
+	config, err := NewNativeConfig(user, clientVersion, auth, hostKeyCallback)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting config for native Go SSH: %s", err)
 	}
@@ -89,7 +89,7 @@ func NewNativeClient(user, host, clientVersion string, port int, auth *Auth) (Cl
 }
 
 // NewNativeConfig returns a golang ssh client config struct for use by the NativeClient
-func NewNativeConfig(user, clientVersion string, auth *Auth) (ssh.ClientConfig, error) {
+func NewNativeConfig(user, clientVersion string, auth *Auth, hostKeyCallback ssh.HostKeyCallback) (ssh.ClientConfig, error) {
 	var (
 		authMethods []ssh.AuthMethod
 	)
@@ -114,10 +114,15 @@ func NewNativeConfig(user, clientVersion string, auth *Auth) (ssh.ClientConfig, 
 		}
 	}
 
+	if hostKeyCallback == nil {
+		hostKeyCallback = ssh.InsecureIgnoreHostKey()
+	}
+
 	return ssh.ClientConfig{
-		User:          user,
-		Auth:          authMethods,
-		ClientVersion: clientVersion,
+		User:            user,
+		Auth:            authMethods,
+		ClientVersion:   clientVersion,
+		HostKeyCallback: hostKeyCallback,
 	}, nil
 }
 
