@@ -145,7 +145,7 @@ func (client *NativeClient) session(command string) (*ssh.Session, error) {
 
 	conn, err := ssh.Dial("tcp", client.Hostname, &client.Config)
 	if err != nil {
-		return nil, fmt.Errorf("Mysterious error dialing TCP for SSH (we already succeeded at least once) : %s", err)
+		return nil, err
 	}
 
 	return conn.NewSession()
@@ -234,6 +234,8 @@ func (client *NativeClient) Wait() error {
 	client.openSession = nil
 	return err
 }
+
+// ReverseShell gives a shell to remote host.
 
 // Shell requests a shell from the remote. If an arg is passed, it tries to
 // exec them on the server.
