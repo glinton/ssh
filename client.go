@@ -20,16 +20,17 @@ package ssh
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"os"
-	"strings"
-
+	"github.com/Mester19/gopass"
 	"github.com/docker/docker/pkg/term"
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnutils"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
+	"io"
+	"io/ioutil"
+	"os"
+	"strconv"
+	"strings"
 )
 
 // Client is a relic interface that both native and external client matched
@@ -70,12 +71,19 @@ type Auth struct {
 }
 
 // NewNativeClient creates a new Client using the golang ssh library
-func NewNativeClient(user, host, clientVersion string, port int, auth *Auth) (Client, error) {
-	if clientVersion == "" {
-		clientVersion = "SSH-2.0-Go"
+func NewNativeClient(user, hostname string, clientVersion []byte, auth *Auth) (Client, error) {
+	if clientVersion == nil {
+		clientVersion = []byte("SSH-2.0-Go")
 	}
 
-	config, err := NewNativeConfig(user, clientVersion, auth)
+	s := strings.Split(hostname, ":")
+	host := s[0]
+	port, err := strconv.Atoi(s[1])
+	if err != nil {
+		return &NativeClient{}, err
+	}
+
+	config, err := NewNativeConfig(user, host, string(clientVersion), auth)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting config for native Go SSH: %s", err)
 	}
@@ -84,12 +92,12 @@ func NewNativeClient(user, host, clientVersion string, port int, auth *Auth) (Cl
 		Config:        config,
 		Hostname:      host,
 		Port:          port,
-		ClientVersion: clientVersion,
+		ClientVersion: string(clientVersion),
 	}, nil
 }
 
 // NewNativeConfig returns a golang ssh client config struct for use by the NativeClient
-func NewNativeConfig(user, clientVersion string, auth *Auth) (ssh.ClientConfig, error) {
+func NewNativeConfig(user, host, clientVersion string, auth *Auth) (ssh.ClientConfig, error) {
 	var (
 		authMethods []ssh.AuthMethod
 	)
@@ -112,12 +120,24 @@ func NewNativeConfig(user, clientVersion string, auth *Auth) (ssh.ClientConfig, 
 		for _, p := range auth.Passwords {
 			authMethods = append(authMethods, ssh.Password(p))
 		}
+	} else {
+		pass := new(gopass.Shadow)
+
+		fmt.Printf("%s@%s's password: ", user, host)
+		err := pass.ReadPasswdMasked()
+		if err != nil {
+			panic(err)
+		}
+		defer pass.Clean()
+
+		authMethods = append(authMethods, ssh.Password(string(pass.GetPasswd())))
 	}
 
 	return ssh.ClientConfig{
-		User:          user,
-		Auth:          authMethods,
-		ClientVersion: clientVersion,
+		User:            user,
+		Auth:            authMethods,
+		ClientVersion:   clientVersion,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}, nil
 }
 
@@ -177,7 +197,13 @@ func (client *NativeClient) OutputWithPty(command string) (string, error) {
 
 	// request tty -- fixes error with hosts that use
 	// "Defaults requiretty" in /etc/sudoers - I'm looking at you RedHat
-	if err := session.RequestPty("xterm", termHeight, termWidth, modes); err != nil {
+
+	term := os.Getenv("TERM")
+	if term == "" {
+		term = "xterm"
+	}
+
+	if err := session.RequestPty(term, termHeight, termWidth, modes); err != nil {
 		return "", err
 	}
 
@@ -215,7 +241,7 @@ func (client *NativeClient) Start(command string) (io.ReadCloser, io.ReadCloser,
 // returned error follows the same logic as in the exec.Cmd.Wait function.
 func (client *NativeClient) Wait() error {
 	err := client.openSession.Wait()
-	_ = client.openSession.Close()
+	client.openSession.Close()
 	client.openSession = nil
 	return err
 }
@@ -226,6 +252,7 @@ func (client *NativeClient) Shell(args ...string) error {
 	var (
 		termWidth, termHeight = 80, 24
 	)
+
 	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", client.Hostname, client.Port), &client.Config)
 	if err != nil {
 		return err
@@ -263,7 +290,12 @@ func (client *NativeClient) Shell(args ...string) error {
 		}
 	}
 
-	if err := session.RequestPty("xterm", termHeight, termWidth, modes); err != nil {
+	term := os.Getenv("TERM")
+	if term == "" {
+		term = "xterm"
+	}
+
+	if err := session.RequestPty(term, termHeight, termWidth, modes); err != nil {
 		return err
 	}
 
