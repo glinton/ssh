@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/Mester19/gopass"
+	"github.com/docker/docker/pkg/term"
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnutils"
 	"golang.org/x/crypto/ssh"
@@ -255,9 +256,7 @@ func dial(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
 // Shell requests a shell from the remote. If an arg is passed, it tries to
 // exec them on the server.
 func (client *NativeClient) Shell(args ...string) error {
-	var (
-		w, h = 80, 24
-	)
+	var w, h int = 80, 24
 
 	conn, err := dial(client.Hostname, &client.Config)
 	if err != nil {
@@ -279,20 +278,21 @@ func (client *NativeClient) Shell(args ...string) error {
 		ssh.ECHO: 1,
 	}
 
-	fd := int(os.Stdin.Fd())
+	fd := os.Stdin.Fd()
 
-	if terminal.IsTerminal(fd) {
-		oldState, err := terminal.MakeRaw(fd)
+	if term.IsTerminal(fd) {
+		oldState, err := term.MakeRaw(fd)
 		if err != nil {
 			return err
 		}
 
-		defer terminal.Restore(fd, oldState)
+		defer term.RestoreTerminal(fd, oldState)
 
-		w, h, err = terminal.GetSize(fd)
+		winsize, err := term.GetWinsize(fd)
 		if err != nil {
 			return err
 		}
+		h, w = int(winsize.Height), int(winsize.Width)
 	}
 
 	term := os.Getenv("TERM")
@@ -325,15 +325,15 @@ func (client *NativeClient) Shell(args ...string) error {
 func termSize(fd uintptr) []byte {
 	size := make([]byte, 16)
 
-	w, h, err := terminal.GetSize(int(fd))
+	winsize, err := term.GetWinsize(fd)
 	if err != nil {
 		binary.BigEndian.PutUint32(size, uint32(80))
 		binary.BigEndian.PutUint32(size[4:], uint32(24))
 		return size
 	}
 
-	binary.BigEndian.PutUint32(size, uint32(w))
-	binary.BigEndian.PutUint32(size[4:], uint32(h))
+	binary.BigEndian.PutUint32(size, uint32(winsize.Width))
+	binary.BigEndian.PutUint32(size[4:], uint32(winsize.Height))
 
 	return size
 }
