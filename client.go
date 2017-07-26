@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"strings"
 )
@@ -109,17 +110,6 @@ func NewNativeConfig(user, host, clientVersion string, auth *Auth) (ssh.ClientCo
 		for _, p := range auth.Passwords {
 			authMethods = append(authMethods, ssh.Password(p))
 		}
-	} else {
-		pass := new(gopass.Shadow)
-
-		fmt.Printf("%s@%s's password: ", user, host)
-		err := pass.ReadPasswdMasked()
-		if err != nil {
-			panic(err)
-		}
-		defer pass.Clean()
-
-		authMethods = append(authMethods, ssh.Password(string(pass.GetPasswd())))
 	}
 
 	return ssh.ClientConfig{
@@ -131,7 +121,7 @@ func NewNativeConfig(user, host, clientVersion string, auth *Auth) (ssh.ClientCo
 }
 
 func (client *NativeClient) dialSuccess() bool {
-	if _, err := ssh.Dial("tcp", client.Hostname, &client.Config); err != nil {
+	if _, err := dial(client.Hostname, &client.Config); err != nil {
 		log.Debugf("Error dialing TCP: %s", err)
 		return false
 	}
@@ -143,7 +133,7 @@ func (client *NativeClient) session(command string) (*ssh.Session, error) {
 		return nil, fmt.Errorf("Error attempting SSH client dial: %s", err)
 	}
 
-	conn, err := ssh.Dial("tcp", client.Hostname, &client.Config)
+	conn, err := dial(client.Hostname, &client.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +225,32 @@ func (client *NativeClient) Wait() error {
 	return err
 }
 
-// ReverseShell gives a shell to remote host.
+func dial(addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(config.Auth) == 0 {
+		pass := new(gopass.Shadow)
+
+		fmt.Printf("%s@%s's password: ", config.User, addr)
+		err := pass.ReadPasswdMasked()
+		if err != nil {
+			panic(err)
+		}
+		defer pass.Clean()
+
+		config.Auth = append(config.Auth, ssh.Password(string(pass.GetPasswd())))
+	}
+
+	c, channel, req, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		return nil, err
+	}
+
+	return ssh.NewClient(c, channel, req), nil
+}
 
 // Shell requests a shell from the remote. If an arg is passed, it tries to
 // exec them on the server.
@@ -244,7 +259,7 @@ func (client *NativeClient) Shell(args ...string) error {
 		w, h = 80, 24
 	)
 
-	conn, err := ssh.Dial("tcp", client.Hostname, &client.Config)
+	conn, err := dial(client.Hostname, &client.Config)
 	if err != nil {
 		return err
 	}
