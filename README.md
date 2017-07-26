@@ -10,7 +10,7 @@ and will generate/store keys if not found.
 package main
 
 import (
-	"github.com/Mester19/ssh-1"
+	"github.com/Mester19/ssh-client"
 )
 
 func main() {
