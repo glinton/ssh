@@ -29,7 +29,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -58,8 +57,7 @@ type Client interface {
 // NativeClient is the structure for native client use
 type NativeClient struct {
 	Config        ssh.ClientConfig // Config defines the golang ssh client config
-	Hostname      string           // Hostname is the host to connect to
-	Port          int              // Port is the port to connect to
+	Hostname      string           // Hostname is the host and port separed by ':'
 	ClientVersion string           // ClientVersion is the version string to send to the server when identifying
 	openSession   *ssh.Session
 }
@@ -76,22 +74,14 @@ func NewNativeClient(user, hostname string, clientVersion []byte, auth *Auth) (C
 		clientVersion = []byte("SSH-2.0-Go")
 	}
 
-	s := strings.Split(hostname, ":")
-	host := s[0]
-	port, err := strconv.Atoi(s[1])
-	if err != nil {
-		return &NativeClient{}, err
-	}
-
-	config, err := NewNativeConfig(user, host, string(clientVersion), auth)
+	config, err := NewNativeConfig(user, hostname, string(clientVersion), auth)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting config for native Go SSH: %s", err)
 	}
 
 	return &NativeClient{
 		Config:        config,
-		Hostname:      host,
-		Port:          port,
+		Hostname:      hostname,
 		ClientVersion: string(clientVersion),
 	}, nil
 }
@@ -142,7 +132,7 @@ func NewNativeConfig(user, host, clientVersion string, auth *Auth) (ssh.ClientCo
 }
 
 func (client *NativeClient) dialSuccess() bool {
-	if _, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", client.Hostname, client.Port), &client.Config); err != nil {
+	if _, err := ssh.Dial("tcp", client.Hostname, &client.Config); err != nil {
 		log.Debugf("Error dialing TCP: %s", err)
 		return false
 	}
@@ -154,7 +144,7 @@ func (client *NativeClient) session(command string) (*ssh.Session, error) {
 		return nil, fmt.Errorf("Error attempting SSH client dial: %s", err)
 	}
 
-	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", client.Hostname, client.Port), &client.Config)
+	conn, err := ssh.Dial("tcp", client.Hostname, &client.Config)
 	if err != nil {
 		return nil, fmt.Errorf("Mysterious error dialing TCP for SSH (we already succeeded at least once) : %s", err)
 	}
@@ -253,7 +243,7 @@ func (client *NativeClient) Shell(args ...string) error {
 		termWidth, termHeight = 80, 24
 	)
 
-	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", client.Hostname, client.Port), &client.Config)
+	conn, err := ssh.Dial("tcp", client.Hostname, &client.Config)
 	if err != nil {
 		return err
 	}
