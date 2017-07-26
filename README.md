@@ -10,30 +10,18 @@ and will generate/store keys if not found.
 package main
 
 import (
-	"fmt"
-
-	"github.com/glinton/ssh"
+	"github.com/Mester19/ssh-client"
 )
 
 func main() {
-	err := connect()
-	if err != nil {
-		fmt.Printf("Failed to connect - %s\n", err)
-	}
-}
+  session, err := ssh.NewNativeClient("username", "hostname.com:22", nil, nil)
+  if err != nil {
+    panic(err)
+  }
 
-func connect() error {
-	nanPass := ssh.Auth{Passwords: []string{"pass"}}
-	client, err := ssh.NewNativeClient("user", "localhost", "SSH-2.0-MyCustomClient-1.0", 2222, &nanPass)
-	if err != nil {
-		return fmt.Errorf("Failed to create new client - %s", err)
-	}
-
-	err = client.Shell()
-	if err != nil && err.Error() != "exit status 255" {
-		return fmt.Errorf("Failed to request shell - %s", err)
-	}
-
-	return nil
+  err = session.Shell()
+  if err != nil {
+    panic(err)
+  }
 }
 ```
